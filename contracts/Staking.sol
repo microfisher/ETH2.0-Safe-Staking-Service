@@ -26,7 +26,7 @@ contract Staking {
     // events
     event OnDeposit(address indexed payer,uint256 amount,uint256 time,bool startValidator);
     event OnDepositBatch(address indexed payer,uint256 amount,uint256 fee,uint256 time,bytes pubkeys,bytes withdrawal_credentials,bytes signatures,bytes32[] deposit_data_roots);
-    event OnValidatorCreated(address indexed owner,uint256 time,bytes pubkey,bytes withdrawal_credential,bytes signature,bytes32 deposit_data_root);
+    event OnValidatorCreated(address indexed owner,uint256 remain,uint256 time,bytes pubkey,bytes withdrawal_credential,bytes signature,bytes32 deposit_data_root);
     event OnFeeTakeOut(address indexed owner, address indexed receiver, uint256 fee);
     event OnFeeChanged(address indexed owner, uint256 fee);
     event OnStatusChanged(address indexed owner,bool status);
@@ -48,14 +48,7 @@ contract Staking {
     function deposit() external payable onlyEnable {
         require(msg.value >= _system.minimum, "The amount cannot be less than minimum");
         _system.deposit += msg.value;
-        bool startValidator = false;
-        if(_system.deposit>=DEPOSIT_AMOUNT){
-            _system.deposit -= DEPOSIT_AMOUNT;
-            startValidator = true;
-        }else{
-            startValidator = false;
-        }
-         emit OnDeposit(msg.sender,msg.value,block.timestamp,startValidator);
+         emit OnDeposit(msg.sender,msg.value,block.timestamp,_system.deposit % DEPOSIT_AMOUNT == 0);
     }
 
     // deposit 32eth to ETH2.0
@@ -88,8 +81,12 @@ contract Staking {
             );
         }
 
+        // calculate fee
+        uint256 fee = _system.fee * pubkeyCount;
+        _system.devfee += fee;
+
         // emit event
-        emit OnDepositBatch(msg.sender,DEPOSIT_AMOUNT * pubkeyCount,_system.fee * pubkeyCount,block.timestamp,pubkeys,withdrawal_credentials,signatures,deposit_data_roots);
+        emit OnDepositBatch(msg.sender,DEPOSIT_AMOUNT * pubkeyCount,fee,block.timestamp,pubkeys,withdrawal_credentials,signatures,deposit_data_roots);
     }
 
     // create validator
@@ -97,7 +94,8 @@ contract Staking {
         require(pubkey.length == PUBKEY_LENGTH, "Invalid validator public key");
         require(signature.length == SIGNATURE_LENGTH, "Invalid deposit signature");
         require(withdrawal_credential.length == CREDENTIALS_LENGTH, "Invalid withdrawal_credential length");
-        require(withdrawal_credential.length == CREDENTIALS_LENGTH, "Invalid withdrawal_credential length");
+        require(_system.deposit >= DEPOSIT_AMOUNT, "Invalid deposit amount");
+        require(address(this).balance>=_system.deposit, "Invalid balance");
 
         IDepositContract(_system.eth2).deposit{value: DEPOSIT_AMOUNT}(
             pubkey,
@@ -106,15 +104,18 @@ contract Staking {
             deposit_data_root
         );
 
-        emit OnValidatorCreated(msg.sender,block.timestamp,pubkey,withdrawal_credential,signature,deposit_data_root);
+        _system.deposit -= DEPOSIT_AMOUNT;
+
+        emit OnValidatorCreated(msg.sender,_system.deposit,block.timestamp,pubkey,withdrawal_credential,signature,deposit_data_root);
     }
 
     // take out fee
-    function takeOutFee(address receiver) public onlyOwner {       
-        require(receiver != address(0), "Error receiver");
-        uint256 fee = _system.devfee;
-        payable(receiver).transfer(fee);
-        emit OnFeeTakeOut(msg.sender,receiver,fee);
+    function takeOutFee(address receiver) public onlyOwner {    
+        require(receiver != address(0), "Invalid receiver");
+        require(_system.devfee>0 && address(this).balance>=_system.devfee, "Invalid fee");
+        payable(receiver).transfer(_system.devfee);
+        _system.devfee = 0;
+        emit OnFeeTakeOut(msg.sender,receiver,_system.devfee);
     }
 
     // change fee 
