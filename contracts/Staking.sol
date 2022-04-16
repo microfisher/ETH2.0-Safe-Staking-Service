@@ -26,13 +26,14 @@ contract Staking {
     // events
     event OnDeposit(address indexed payer,uint256 amount,uint256 time,bool startValidator);
     event OnDepositBatch(address indexed payer,uint256 amount,uint256 fee,uint256 time,bytes pubkeys,bytes withdrawal_credentials,bytes signatures,bytes32[] deposit_data_roots);
-    event OnValidatorCreated(address indexed owner,uint256 remain,uint256 time,bytes pubkey,bytes withdrawal_credential,bytes signature,bytes32 deposit_data_root);
+    event OnValidatorCreated(address indexed owner,uint256 deposit,uint256 time,bytes pubkey,bytes withdrawal_credential,bytes signature,bytes32 deposit_data_root);
     event OnFeeTakeOut(address indexed owner, address indexed receiver, uint256 fee);
     event OnFeeChanged(address indexed owner, uint256 fee);
     event OnStatusChanged(address indexed owner,bool status);
     event OnOwnerChanged(address indexed owner,address ownership);
     event OnOperatorChanged(address indexed owner,address operator);
     event OnMinimumChanged(address indexed owner,uint256 amount);
+    event OnRecharge(address indexed payer,uint256 amount,uint256 deposit,uint256 time);
 
     // initialize
     constructor(address eth2, uint256 fee) {
@@ -107,6 +108,12 @@ contract Staking {
         _system.deposit -= DEPOSIT_AMOUNT;
 
         emit OnValidatorCreated(msg.sender,_system.deposit,block.timestamp,pubkey,withdrawal_credential,signature,deposit_data_root);
+    }
+
+    // recharge
+    function recharge() external payable {
+        _system.deposit += msg.value;
+         emit OnRecharge(msg.sender,msg.value,_system.deposit,block.timestamp);
     }
 
     // take out fee
